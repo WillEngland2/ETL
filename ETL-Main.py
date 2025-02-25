@@ -1,14 +1,14 @@
 import argparse
 import pandas as pd
-import os
 from openpyxl import load_workbook
+import numpy as np
 
-def process_excel(input_file, output_file, invoice_No, invoice_date, due_date, terms):
+
+def process_excel(input_file, output_file, invoice_no, invoice_date, due_date, terms, item_tax_code):
     # Validate file extension
     if not (input_file.endswith(".xlsx") or input_file.endswith(".xls")):
         print("Error: The input file must be an Excel file (.xlsx or .xls).")
         return
-
     try:
         # Read Excel file
         df = pd.read_excel(input_file)
@@ -17,7 +17,7 @@ def process_excel(input_file, output_file, invoice_No, invoice_date, due_date, t
         print("Columns in the file:", df.columns)
 
         # Define the columns to extract
-        columns_to_extract = ["Customer", "Employee", "REG HRS"]  # Ensure "REG HRS" is the actual column name
+        columns_to_extract = ["Customer", "Employee", "REG HRS", "B/R"]  # Ensure "REG HRS" is the actual column name
 
         # Check if all required columns exist
         missing_columns = [col for col in columns_to_extract if col not in df.columns]
@@ -31,34 +31,38 @@ def process_excel(input_file, output_file, invoice_No, invoice_date, due_date, t
         # Select only the required columns
         filtered_df = df[columns_to_extract]
 
-        # Add the invoice number as a new column
-        filtered_df["*InvoiceNo"] = invoice_No
-
-        # Add the invoice date
+        # Add the invoice details as new columns
+        filtered_df["*InvoiceNo"] = invoice_no
+        filtered_df["*ItemTaxCode"] = item_tax_code
         filtered_df["*InvoiceDate"] = invoice_date
-
-        # Add the Due Date
         filtered_df["*DueDate"] = due_date
-
-        # Add the Terms
         filtered_df["Terms"] = terms
 
-        # Rename Company Column to *Customer
-        filtered_df["*Customer"] = filtered_df["Customer"]
+        # Rename columns
+        filtered_df["*Customer"] = filtered_df["Customer"]  # Rename "Customer" to "*Customer"
+        filtered_df["Rate"] = filtered_df["B/R"]  # Rename "B/R" to "Rate"
+        filtered_df["Hours"] = filtered_df["REG HRS"]  # Rename "REG HRS" to "Hours"
 
-        # Rename the REG HRS column to *Hours
-        filtered_df["Hours"] = filtered_df["REG HRS"]
-
-        # Remove rows where *Hours is empty or NaN
+        # Remove rows where Hours is empty or NaN
         filtered_df = filtered_df.dropna(subset=["Hours"])
 
+        # Drop unnecessary columns including "B/R"
+        filtered_df = filtered_df.drop(columns=["Customer", "REG HRS", "B/R"])
+
+        # Ensure "Rate" and "Hours" are numeric
+        filtered_df["Rate"] = pd.to_numeric(filtered_df["Rate"], errors="coerce")
+        filtered_df["Hours"] = pd.to_numeric(filtered_df["Hours"], errors="coerce")
+
+        # Drop rows where either Rate or Hours is NaN (to avoid multiplication errors)
+        filtered_df = filtered_df.dropna(subset=["Rate", "Hours"])
+
+        # Calculate total cost
+        filtered_df["*Total"] = (filtered_df["Hours"] * filtered_df["Rate"]).round(2)
+
         # Specify the desired column order
-        column_order = ["*InvoiceNo", "*Customer", "*InvoiceDate", "*DueDate", "Terms", "Employee", "Hours"]
+        column_order = ["*InvoiceNo", "*Customer", "*InvoiceDate", "*DueDate", "Terms", "Employee", "Hours", "Rate", "*ItemTaxCode", "*Total"]
 
-        # Drop the original 'Customer' and 'REG HRS' columns
-        filtered_df = filtered_df.drop(columns=["Customer", "REG HRS"])
-
-        # Reorder the DataFrame based on the specified order
+        # Reorder the DataFrame
         filtered_df = filtered_df[column_order]
 
         # Check if any data was found
@@ -94,6 +98,7 @@ def process_excel(input_file, output_file, invoice_No, invoice_date, due_date, t
     except Exception as e:
         print(f"An error occurred: {e}")
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract employees for all companies from an Excel file.")
     parser.add_argument("input_file", help="Path to the input Excel file")
@@ -102,7 +107,8 @@ if __name__ == "__main__":
     parser.add_argument("invoice_date", help="Invoice date to keep track of date invoiced")
     parser.add_argument("due_date", help="Invoice date to keep track of due date")
     parser.add_argument("terms", help="Terms for payment or other conditions")
+    parser.add_argument("item_tax_code", help="Allow for update of the tax code")
 
     args = parser.parse_args()
 
-    process_excel(args.input_file, args.output_file, args.invoice_No, args.invoice_date, args.due_date, args.terms)
+    process_excel(args.input_file, args.output_file, args.invoice_No, args.invoice_date, args.due_date, args.terms, args.item_tax_code)
