@@ -24,6 +24,7 @@
     - `1/4/2025` → The **invoice date**.
     - `2/3/2025` → The **due date**.
     - `"Net 30"` → The **payment terms**.
+    - `"""` → The **Item Tax Code**.
 
 4. **Output:**
     - Once the program completes execution, a file named **output.xlsx** will be created in the same directory.
