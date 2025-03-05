@@ -10,9 +10,6 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
         # Read Excel file
         df = pd.read_excel(input_file)
 
-        # Print all column names for debugging
-        print("Columns in the file:", df.columns)
-
         # Define the columns to extract
         columns_to_extract = ["Customer", "Employee", "REG HRS", "B/R", "OT HRS", "OT B/R", "Inv Num"]
 
@@ -32,7 +29,6 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
 
         # Save cleaned data to CSV before further processing
         df.to_csv(output_file, index=False)
-        print(f"Cleaned data saved as: {output_file}")
 
         # Select only the required columns
         filtered_df = df[columns_to_extract].copy()
@@ -41,29 +37,25 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
         valid_inv_nums = pd.to_numeric(df["Inv Num"], errors="coerce").dropna().astype(int)
         invoice_no = valid_inv_nums.min() if not valid_inv_nums.empty else 115  # Start at 115 if no valid Inv Num
 
-        print(f"Initial invoice number: {invoice_no}")
-
         current_customer = None
         new_rows = []
 
         # Iterate through each row
         for _, row in filtered_df.iterrows():
-            print(f"Row Customer: {row['Customer']}, Row Invoice Num: {row['Inv Num']}")
-
             try:
                 inv_num = int(row["Inv Num"]) if pd.notnull(row["Inv Num"]) else None
             except ValueError:
                 inv_num = None
 
-            # Assign invoice number properly
             if inv_num is not None:
-                invoice_no = inv_num  # If Inv Num is present, use it directly
-            elif current_customer != row["Customer"]:  # New customer, no Inv Num
+                invoice_no = inv_num  # Use the existing invoice number directly
+            elif current_customer != row["Customer"]:  # Only increment for a new customer
                 current_customer = row["Customer"]
-                invoice_no += 1  # Increment for a new customer if Inv Num is missing
+                if valid_inv_nums.empty or invoice_no not in valid_inv_nums.values:
+                    invoice_no += 1  # Increment only when there are no valid invoice numbers in the data
 
-            # Now assign the invoice number and other information to the row
-            row["*InvoiceNo"] = invoice_no
+            row["*InvoiceNo"] = invoice_no  # Assign invoice number
+
             row["*ItemTaxCode"] = item_tax_code
             row["*InvoiceDate"] = invoice_date
             row["*DueDate"] = due_date
@@ -81,8 +73,8 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
             row["OT B/R"] = pd.to_numeric(row.get("OT B/R", 0), errors="coerce")
 
             # Calculate regular amount
-            row["Amount"] = row["Hours"] * row["Rate"] if pd.notnull(row["Hours"]) and pd.notnull(row["Rate"]) else None
-
+            row["Amount"] = round(row["Hours"] * row["Rate"], 2) if pd.notnull(row["Hours"]) \
+                                                                    and pd.notnull(row["Rate"]) else None
             new_rows.append(row)
 
             # Handle overtime rows
@@ -91,7 +83,8 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
                 overtime_row["Employee"] = "Overtime"
                 overtime_row["Hours"] = row["OT HRS"]
                 overtime_row["Rate"] = row["OT B/R"]
-                overtime_row["Amount"] = round(overtime_row["Hours"] * overtime_row["Rate"], 2) if pd.notnull(overtime_row["Hours"]) and pd.notnull(overtime_row["Rate"]) else None
+                overtime_row["Amount"] = round(overtime_row["Hours"] * overtime_row["Rate"], 2) \
+                    if pd.notnull(overtime_row["Hours"]) and pd.notnull(overtime_row["Rate"]) else None
                 new_rows.append(overtime_row)
 
         # Convert to DataFrame
@@ -113,7 +106,7 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
 
         # Save final data to CSV
         final_df.to_csv(output_file, index=False)
-        print(f"Processed file saved as: {output_file}")
+        print("output saved to" ,output_file)
 
     except Exception as e:
         print(f"An error occurred: {e}")
