@@ -1,9 +1,7 @@
 import argparse
 import pandas as pd
-from openpyxl import load_workbook
 
-def process_excel(input_file, output_file, invoice_no, invoice_date, due_date, terms, item_tax_code):
-    # Validate file extension
+def process_excel(input_file, output_file, invoice_date, due_date, terms, item_tax_code):
     if not (input_file.endswith(".xlsx") or input_file.endswith(".xls")):
         print("Error: The input file must be an Excel file (.xlsx or .xls).")
         return
@@ -16,7 +14,7 @@ def process_excel(input_file, output_file, invoice_no, invoice_date, due_date, t
         print("Columns in the file:", df.columns)
 
         # Define the columns to extract
-        columns_to_extract = ["Customer", "Employee", "REG HRS", "B/R", "OT HRS", "OT B/R"]
+        columns_to_extract = ["Customer", "Employee", "REG HRS", "B/R", "OT HRS", "OT B/R", "Inv Num"]
 
         # Check if all required columns exist
         missing_columns = [col for col in columns_to_extract if col not in df.columns]
@@ -25,95 +23,96 @@ def process_excel(input_file, output_file, invoice_no, invoice_date, due_date, t
             return
 
         # Strip any leading/trailing whitespace from column values
-        df["Customer"] = df["Customer"].astype(str).str.strip()
+        for col in columns_to_extract:
+            df[col] = df[col].astype(str).str.strip()
+
+        # Remove rows where any of the required columns have NaN or empty values
+        df = df.dropna(subset=columns_to_extract)
+        df = df[(df["Customer"] != "") & (df["Employee"] != "")]
+
+        # Save cleaned data to CSV before further processing
+        df.to_csv(output_file, index=False)
+        print(f"Cleaned data saved as: {output_file}")
 
         # Select only the required columns
         filtered_df = df[columns_to_extract].copy()
 
-        # Add the invoice details as new columns
-        filtered_df["*InvoiceNo"] = invoice_no
-        filtered_df["*ItemTaxCode"] = item_tax_code
-        filtered_df["*InvoiceDate"] = invoice_date
-        filtered_df["*DueDate"] = due_date
-        filtered_df["Terms"] = terms
+        # Initialize invoice_no from the first valid "Inv Num" if available
+        valid_inv_nums = pd.to_numeric(df["Inv Num"], errors="coerce").dropna().astype(int)
+        invoice_no = valid_inv_nums.min() if not valid_inv_nums.empty else 115  # Start at 115 if no valid Inv Num
 
-        # Rename columns
-        filtered_df.rename(columns={"Customer": "*Customer", "B/R": "Rate", "REG HRS": "Hours"}, inplace=True)
+        print(f"Initial invoice number: {invoice_no}")
 
-        # Remove rows where Hours is empty or NaN
-        filtered_df = filtered_df.dropna(subset=["Hours"])
-
-        # Ensure "Rate", "Hours", "OT HRS", and "OT B/R" are numeric
-        filtered_df["Rate"] = pd.to_numeric(filtered_df["Rate"], errors="coerce")
-        filtered_df["Hours"] = pd.to_numeric(filtered_df["Hours"], errors="coerce")
-        filtered_df["OT HRS"] = pd.to_numeric(filtered_df["OT HRS"], errors="coerce")
-        filtered_df["OT B/R"] = pd.to_numeric(filtered_df["OT B/R"], errors="coerce")
-
-        # Drop rows where either Rate or Hours is NaN (to avoid multiplication errors)
-        filtered_df = filtered_df.dropna(subset=["Rate", "Hours"])
-
-        # Calculate total cost for regular hours
-        filtered_df["Amount"] = (filtered_df["Hours"] * filtered_df["Rate"]).round(2)
-
-        # Create a list to store new rows with overtime entries
+        current_customer = None
         new_rows = []
 
-        # Iterate through each row to add an "Overtime" row if needed
+        # Iterate through each row
         for _, row in filtered_df.iterrows():
-            new_rows.append(row)  # Add the original row
+            print(f"Row Customer: {row['Customer']}, Row Invoice Num: {row['Inv Num']}")
 
-            # If OT HRS exists and is greater than 0, create an overtime row
+            try:
+                inv_num = int(row["Inv Num"]) if pd.notnull(row["Inv Num"]) else None
+            except ValueError:
+                inv_num = None
+
+            # Assign invoice number properly
+            if inv_num is not None:
+                invoice_no = inv_num  # If Inv Num is present, use it directly
+            elif current_customer != row["Customer"]:  # New customer, no Inv Num
+                current_customer = row["Customer"]
+                invoice_no += 1  # Increment for a new customer if Inv Num is missing
+
+            # Now assign the invoice number and other information to the row
+            row["*InvoiceNo"] = invoice_no
+            row["*ItemTaxCode"] = item_tax_code
+            row["*InvoiceDate"] = invoice_date
+            row["*DueDate"] = due_date
+            row["Terms"] = terms
+
+            # Rename columns
+            row["*Customer"] = row.pop("Customer")
+            row["Rate"] = row.pop("B/R")
+            row["Hours"] = row.pop("REG HRS")
+
+            # Convert columns to numeric
+            row["Rate"] = pd.to_numeric(row["Rate"], errors="coerce")
+            row["Hours"] = pd.to_numeric(row["Hours"], errors="coerce")
+            row["OT HRS"] = pd.to_numeric(row.get("OT HRS", 0), errors="coerce")
+            row["OT B/R"] = pd.to_numeric(row.get("OT B/R", 0), errors="coerce")
+
+            # Calculate regular amount
+            row["Amount"] = row["Hours"] * row["Rate"] if pd.notnull(row["Hours"]) and pd.notnull(row["Rate"]) else None
+
+            new_rows.append(row)
+
+            # Handle overtime rows
             if row["OT HRS"] > 0:
                 overtime_row = row.copy()
-                overtime_row["Employee"] = "Overtime"  # Change employee name to 'Overtime'
-                overtime_row["Hours"] = row["OT HRS"]  # Use overtime hours
-                overtime_row["Rate"] = row["OT B/R"]   # Use overtime rate
-                overtime_row["Amount"] = round(overtime_row["Hours"] * overtime_row["Rate"], 2) \
-                    if pd.notnull(overtime_row["Hours"]) and pd.notnull(overtime_row["Rate"]) else None
-                new_rows.append(overtime_row)  # Add new overtime row
+                overtime_row["Employee"] = "Overtime"
+                overtime_row["Hours"] = row["OT HRS"]
+                overtime_row["Rate"] = row["OT B/R"]
+                overtime_row["Amount"] = round(overtime_row["Hours"] * overtime_row["Rate"], 2) if pd.notnull(overtime_row["Hours"]) and pd.notnull(overtime_row["Rate"]) else None
+                new_rows.append(overtime_row)
 
-        # Convert the list of new rows back to a DataFrame
+        # Convert to DataFrame
         final_df = pd.DataFrame(new_rows)
 
-        # Remove overtime columns since they are now separate rows
+        # Remove overtime columns
         final_df.drop(columns=["OT HRS", "OT B/R"], inplace=True)
 
-        # Specify the desired column order
-        column_order = ["*InvoiceNo", "*Customer", "*InvoiceDate", "*DueDate", "Terms", "Employee", "Hours", "Rate",
-                        "*ItemTaxCode", "Amount"]
-
-        # Reorder the DataFrame
+        # Reorder columns
+        column_order = ["*InvoiceNo", "*Customer", "*InvoiceDate", "*DueDate", "Terms", "Employee", "Hours", "Rate", "*ItemTaxCode", "Amount"]
         final_df = final_df[column_order]
 
-        # Check if any data was found
+        # Drop rows with NaN values
+        final_df.dropna(inplace=True)
+
         if final_df.empty:
             print("No records found in the input file.")
             return
 
-        # Save the filtered and reordered data to Excel
-        final_df.to_excel(output_file, index=False, sheet_name="All Companies")
-
-        # Open the saved file using openpyxl to adjust row height and column width
-        wb = load_workbook(output_file)
-        ws = wb.active
-
-        # Adjust column width based on content length
-        for col in ws.columns:
-            max_length = 0
-            column = col[0].column_letter  # Get the column name
-            for cell in col:
-                try:
-                    if cell.value:
-                        max_length = max(max_length, len(str(cell.value)))
-                except Exception as e:
-                    print(f"Error adjusting column width: {e}")
-                    continue
-            adjusted_width = max_length + 2  # Add some padding
-            ws.column_dimensions[column].width = adjusted_width
-
-        # Save the adjusted Excel file
-        wb.save(output_file)
-
+        # Save final data to CSV
+        final_df.to_csv(output_file, index=False)
         print(f"Processed file saved as: {output_file}")
 
     except Exception as e:
@@ -123,7 +122,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract employees for all companies from an Excel file.")
     parser.add_argument("input_file", help="Path to the input Excel file")
     parser.add_argument("output_file", help="Path to save the extracted data")
-    parser.add_argument("invoice_no", help="Invoice number to add to the output data")
     parser.add_argument("invoice_date", help="Invoice date to keep track of date invoiced")
     parser.add_argument("due_date", help="Invoice due date")
     parser.add_argument("terms", help="Terms for payment or other conditions")
@@ -131,4 +129,4 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    process_excel(args.input_file, args.output_file, args.invoice_no, args.invoice_date, args.due_date, args.terms, args.item_tax_code)
+    process_excel(args.input_file, args.output_file, args.invoice_date, args.due_date, args.terms, args.item_tax_code)
