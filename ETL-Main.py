@@ -23,54 +23,54 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
         for col in columns_to_extract:
             df[col] = df[col].astype(str).str.strip()
 
-        # Remove rows where any of the required columns have NaN or empty values
-        df = df.dropna(subset=columns_to_extract)
-        df = df[(df["Customer"] != "") & (df["Employee"] != "")]
+        # Remove rows where "Customer" is NaN or empty
+        df = df[df["Customer"].notna() & (df["Customer"] != "")]
 
         # Save cleaned data to CSV before further processing
-        df.to_csv(output_file, index=False)
+        df.to_csv("cleaned_data.csv", index=False)  # Debugging step
 
         # Select only the required columns
         filtered_df = df[columns_to_extract].copy()
 
         # Initialize invoice_no from the first valid "Inv Num" if available
         valid_inv_nums = pd.to_numeric(df["Inv Num"], errors="coerce").dropna().astype(int)
-        invoice_no = valid_inv_nums.min() if not valid_inv_nums.empty else 115  # Start at 115 if no valid Inv Num
+        invoice_no = valid_inv_nums.min() - 2 if not valid_inv_nums.empty else 115  # Start at 115 if no valid Inv Num
 
         current_customer = None
         new_rows = []
 
-        # Iterate through each row
-        for _, row in filtered_df.iterrows():
+        for index, row in filtered_df.iterrows():
+            if pd.isna(row["Customer"]) or row["Customer"] == "":
+                continue  # Skip rows with no customer
+
             try:
                 inv_num = int(row["Inv Num"]) if pd.notnull(row["Inv Num"]) else None
             except ValueError:
                 inv_num = None
-
             if inv_num is not None:
-                invoice_no = inv_num  # Use the existing invoice number directly
+                invoice_no = inv_num  # Use existing invoice number
             elif current_customer != row["Customer"]:  # Only increment for a new customer
                 current_customer = row["Customer"]
-                if valid_inv_nums.empty or invoice_no not in valid_inv_nums.values:
-                    invoice_no += 1  # Increment only when there are no valid invoice numbers in the data
+                invoice_no += 1
+            # Assign invoice number
+            row["*InvoiceNo"] = invoice_no
 
-            row["*InvoiceNo"] = invoice_no  # Assign invoice number
-
+            # Add new fields
             row["*ItemTaxCode"] = item_tax_code
             row["*InvoiceDate"] = invoice_date
             row["*DueDate"] = due_date
             row["Terms"] = terms
 
-            # Rename columns
-            row["*Customer"] = row.pop("Customer")
-            row["Rate"] = row.pop("B/R")
-            row["Hours"] = row.pop("REG HRS")
+            # Rename columns safely using .loc
+            row["*Customer"] = row["Customer"]
+            row["Rate"] = row["B/R"]
+            row["Hours"] = row["REG HRS"]
 
             # Convert columns to numeric
             row["Rate"] = pd.to_numeric(row["Rate"], errors="coerce")
             row["Hours"] = pd.to_numeric(row["Hours"], errors="coerce")
-            row["OT HRS"] = pd.to_numeric(row.get("OT HRS", 0), errors="coerce")
-            row["OT B/R"] = pd.to_numeric(row.get("OT B/R", 0), errors="coerce")
+            row["OT HRS"] = pd.to_numeric(row["OT HRS"], errors="coerce")
+            row["OT B/R"] = pd.to_numeric(row["OT B/R"], errors="coerce")
 
             # Calculate regular amount
             row["Amount"] = round(row["Hours"] * row["Rate"], 2) if pd.notnull(row["Hours"]) \
@@ -106,7 +106,7 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
 
         # Save final data to CSV
         final_df.to_csv(output_file, index=False)
-        print("output saved to" ,output_file)
+        print("Output saved to", output_file)
 
     except Exception as e:
         print(f"An error occurred: {e}")
