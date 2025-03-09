@@ -1,63 +1,123 @@
 import argparse
 import pandas as pd
 
-def process_excel(extracted_file, output_file, invoice_date, due_date, terms, item_tax_code):
-    """
-    Reads the extracted employee data, assigns invoice numbers,
-    processes overtime, and saves the final formatted output.
-    """
+
+import argparse
+import pandas as pd
+
+def process_excel(input_file, output_file, invoice_date, due_date, terms, item_tax_code):
+    if not (input_file.endswith(".xlsx") or input_file.endswith(".xls")):
+        print("Error: The input file must be an Excel file (.xlsx or .xls).")
+        return
+
     try:
-        df = pd.read_excel(extracted_file)
+        # Read Excel file
+        df = pd.read_excel(input_file)
 
-        # Initialize invoice numbers
-        df["Inv Num"] = pd.to_numeric(df["Inv Num"], errors="coerce")
-        invoice_no = df["Inv Num"].min() - 2 if df["Inv Num"].notna().any() else 115
+        # Define the columns to extract
+        columns_to_extract = ["Customer", "Employee", "REG HRS", "B/R", "OT HRS", "OT B/R", "Inv Num"]
 
-        new_rows = []
+        # Check if all required columns exist
+        missing_columns = [col for col in columns_to_extract if col not in df.columns]
+        if missing_columns:
+            print(f"Error: Missing columns: {missing_columns}")
+            return
+
+        # Strip any leading/trailing whitespace from column values
+        for col in columns_to_extract:
+            df[col] = df[col].astype(str).str.strip()
+
+        # Remove rows where any of the required columns have NaN or empty values
+        df = df.dropna(subset=columns_to_extract)
+        df = df[df["Customer"].notna() & (df["Customer"] != "")]
+
+        # Save cleaned data to CSV before further processing
+        df.to_csv(output_file, index=False)
+
+        # Select only the required columns
+        filtered_df = df[columns_to_extract].copy()
+
+        # Initialize invoice_no from the first valid "Inv Num" if available
+        valid_inv_nums = pd.to_numeric(df["Inv Num"], errors="coerce").dropna().astype(int)
+        invoice_no = valid_inv_nums.min() - 2 if not valid_inv_nums.empty else 115  # Start at 115 if no valid Inv Num
+
         current_customer = None
+        new_rows = []
 
-        for _, row in df.iterrows():
+        # Iterate through each row
+        for _, row in filtered_df.iterrows():
             if pd.isna(row["Customer"]) or row["Customer"] == "":
-                continue
+                continue  # Skip rows with no customer
 
-            inv_num = row["Inv Num"] if pd.notna(row["Inv Num"]) else None
-            if inv_num is not None:
-                invoice_no = int(inv_num)
-            elif current_customer != row["Customer"]:
+            # Check if customer has changed, and increment invoice number only if so
+            if row["Customer"] != current_customer:
                 current_customer = row["Customer"]
+                # Only increment the invoice number if it's a new customer
                 invoice_no += 1
 
-            row["*InvoiceNo"] = invoice_no
+            try:
+                inv_num = int(row["Inv Num"]) if pd.notnull(row["Inv Num"]) else None
+            except ValueError:
+                inv_num = None
+
+            if inv_num is not None:
+                invoice_no = inv_num  # Use the existing invoice number directly
+
+            row["*InvoiceNo"] = invoice_no  # Assign invoice number
+
+            # Add new fields
             row["*ItemTaxCode"] = item_tax_code
             row["*InvoiceDate"] = invoice_date
             row["*DueDate"] = due_date
             row["Terms"] = terms
-            row["*Customer"] = row["Customer"]
-            row["Rate"] = pd.to_numeric(row["B/R"], errors="coerce")
-            row["Hours"] = pd.to_numeric(row["REG HRS"], errors="coerce")
-            row["Amount"] = round(row["Hours"] * row["Rate"], 2) if pd.notna(row["Hours"]) and pd.notna(row["Rate"]) else None
 
+            # Rename columns
+            row["*Customer"] = row.pop("Customer")
+            row["Rate"] = row.pop("B/R")
+            row["Hours"] = row.pop("REG HRS")
+
+            # Convert columns to numeric
+            row["Rate"] = pd.to_numeric(row["Rate"], errors="coerce")
+            row["Hours"] = pd.to_numeric(row["Hours"], errors="coerce")
+            row["OT HRS"] = pd.to_numeric(row.get("OT HRS", 0), errors="coerce")
+            row["OT B/R"] = pd.to_numeric(row.get("OT B/R", 0), errors="coerce")
+
+            # Calculate regular amount
+            row["Amount"] = round(row["Hours"] * row["Rate"], 2) if pd.notnull(row["Hours"]) and pd.notnull(row["Rate"]) else None
             new_rows.append(row)
 
-            if row.get("OT HRS", 0) > 0:
+            # Handle overtime rows
+            if row["OT HRS"] > 0:
                 overtime_row = row.copy()
                 overtime_row["Employee"] = "Overtime"
                 overtime_row["Hours"] = row["OT HRS"]
                 overtime_row["Rate"] = row["OT B/R"]
-                overtime_row["Amount"] = round(overtime_row["Hours"] * overtime_row["Rate"], 2) if pd.notna(overtime_row["Hours"]) and pd.notna(overtime_row["Rate"]) else None
+                overtime_row["Amount"] = round(overtime_row["Hours"] * overtime_row["Rate"], 2) if pd.notnull(overtime_row["Hours"]) and pd.notnull(overtime_row["Rate"]) else None
                 new_rows.append(overtime_row)
 
-        final_df = pd.DataFrame(new_rows).drop(columns=["OT HRS", "OT B/R"], errors="ignore")
-        column_order = ["*InvoiceNo", "*Customer", "*InvoiceDate", "*DueDate", "Terms", "Employee", "Hours", "Rate", "*ItemTaxCode", "Amount"]
-        final_df = final_df[column_order].dropna()
+        # Convert to DataFrame
+        final_df = pd.DataFrame(new_rows)
 
-        if not final_df.empty:
-            final_df.to_csv(output_file, index=False)
-            print(f"Final formatted output saved to {output_file}")
-        else:
-            print("No records found in the extracted file.")
+        # Remove overtime columns
+        final_df.drop(columns=["OT HRS", "OT B/R"], inplace=True)
+
+        # Reorder columns
+        column_order = ["*InvoiceNo", "*Customer", "*InvoiceDate", "*DueDate", "Terms", "Employee", "Hours", "Rate", "*ItemTaxCode", "Amount"]
+        final_df = final_df[column_order]
+
+        # Drop rows with NaN values
+        final_df.dropna(inplace=True)
+
+        if final_df.empty:
+            print("No records found in the input file.")
+            return
+
+        # Save final data to CSV
+        final_df.to_csv(output_file, index=False)
+        print("Output saved to", output_file)
+
     except Exception as e:
-        print(f"An error occurred in process_excel: {e}")
+        print(f"An error occurred: {e}")
 
 def process_epic(input_file, co_code_output):
     """
@@ -68,9 +128,6 @@ def process_epic(input_file, co_code_output):
         # Read Excel and standardize column names
         df = pd.read_excel(input_file, dtype={"EE ID": str})
         df.columns = df.columns.str.strip().str.upper()  # Standardize column names
-
-        # Debugging: Print column names to verify correctness
-        print("Columns in Excel file:", df.columns)
 
         # Ensure required columns exist
         required_columns = {"CO CODE", "EE ID", "REG HRS", "OT HRS"}
@@ -96,15 +153,11 @@ def process_epic(input_file, co_code_output):
 
         # Fill missing hours with 0
         df["REG HRS"] = df["REG HRS"].fillna(0)
-        df["OT HRS"] = df["OT HRS"].fillna(0)
+        df["OT HRS"] = pd.to_numeric(df["OT HRS"], errors="coerce").fillna(0)
+
 
         # Ensure correct column order
         df = df[["CO CODE", "EE ID", "REG HRS", "OT HRS"]]
-
-        # Print all relevant data
-        print("Processed Data:")
-        for _, row in df.iterrows():
-            print(f"Co Code: {row['CO CODE']}, EE ID: {row['EE ID']}, Reg HRS: {row['REG HRS']}, OT HRS: {row['OT HRS']}")
 
         # Save to CSV, appending if the file exists
         df.to_csv(co_code_output, mode='a', header=not pd.io.common.file_exists(co_code_output), index=False)
