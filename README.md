@@ -15,11 +15,12 @@
    ```
 3. **Run the program** using the following command:
    ```sh
-    python ETL-Main.py input.xlsx output.csv 1/4/2025 2/3/2025 "Net 30" ""
+    python ETL-Main.py input.xlsx output.csv epicoutput.csv 1/4/2025 2/3/2025 "Net 30" ""
    ```
    **Where:**
     - `input.xlsx` → The input spreadsheet containing the data.
     - `output.xlsx` → The name of the generated output file.
+    - `epicoutput.xlsx` → The name of the generated output file.
     - `1/4/2025` → The **invoice date**.
     - `2/3/2025` → The **due date**.
     - `"Net 30"` → The **payment terms**.
