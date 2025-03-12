@@ -27,16 +27,16 @@
    ```
 3. **Run the program** using the following command:
    ```sh
-    python ETL-Main.py input.xlsx output.csv epicoutput.csv 1/4/2025 2/3/2025 "Net 30" ""
+   python3 RunMe.py
    ```
    **Where:**
-    - `input.xlsx` → The input spreadsheet containing the data.
-    - `output.xlsx` → The name of the generated output file.
-    - `epicoutput.xlsx` → The name of the generated output file.
-    - `1/4/2025` → The **invoice date**.
-    - `2/3/2025` → The **due date**.
-    - `"Net 30"` → The **payment terms**.
-    - `"""` → The **Item Tax Code**.
+    - `Input File` → The input spreadsheet containing the data.
+    - `OutputFule` → The name of the generated output file.
+    - `Epic File Name` → The name of the epic generated output file.
+    - `Invoice Date` → The **invoice date**.
+    - `Due Date` → The **due date**.
+    - `Terms` → The **payment terms**.
+    - `Item Tax Code` → The **Item Tax Code**.
 
 4. **Output:**
     - Once the program completes execution, a file named **output.csv** will be created in the same directory.
