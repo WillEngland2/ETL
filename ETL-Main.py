@@ -2,7 +2,6 @@ import argparse
 import pandas as pd
 
 def process_excel(input_file, output_file, invoice_date, due_date, terms, item_tax_code):
-
     if not (input_file.endswith(".xlsx") or input_file.endswith(".xls")):
         print("Error: The input file must be an Excel file (.xlsx or .xls).")
         return
@@ -12,35 +11,52 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
         df = pd.read_excel(input_file)
 
         # Find index of "Separate Invoice"
-        separate_invoice_index = df.apply(lambda row: row.astype(str).str.contains("Separate Invoice", na=False, case=False)).any(axis=1).idxmax()
+        separate_invoice_index = df.apply(
+            lambda row: row.astype(str).str.contains("Separate Invoice", na=False, case=False)
+        ).any(axis=1).idxmax()
 
         # Separate data into before and after "Separate Invoice"
-        if df.apply(lambda row: row.astype(str).str.contains("Separate Invoice", na=False, case=False)).any().any():
+        if df.apply(
+                lambda row: row.astype(str).str.contains("Separate Invoice", na=False, case=False)
+        ).any().any():
             df_before = df.iloc[:separate_invoice_index]
-            df_after = df.iloc[separate_invoice_index+1:]  # Data after "Separate Invoice"
+            df_after = df.iloc[separate_invoice_index:]  # Data after "Separate Invoice"
         else:
             df_before = df
             df_after = pd.DataFrame()  # If no "Separate Invoice", leave this empty
+
+        # Drop rows where the 'Customer' column contains 'Separate Invoice' before processing
+        df_before = df_before[~df_before['Customer'].str.contains("Separate Invoice", na=False, case=False)]
+        df_after = df_after[~df_after['Customer'].str.contains("Separate Invoice", na=False, case=False)]
 
         # Define the columns to extract
         columns_to_extract = ["Customer", "Employee", "REG HRS", "B/R", "OT HRS", "OT B/R", "Inv Num"]
 
         # Check if all required columns exist in both dataframes
-        missing_columns_before = [col for col in columns_to_extract if col not in df_before.columns]
-        missing_columns_after = [col for col in columns_to_extract if col not in df_after.columns]
+        missing_columns_before = [
+            col for col in columns_to_extract if col not in df_before.columns
+        ]
+        missing_columns_after = [
+            col for col in columns_to_extract if col not in df_after.columns
+        ]
         if missing_columns_before or missing_columns_after:
             print(f"Error: Missing columns in data: {missing_columns_before + missing_columns_after}")
             return
+
+        # Initialize invoice_no for both dataframes, using the first valid "Inv Num"
+        valid_inv_nums = pd.to_numeric(df["Inv Num"], errors="coerce").dropna().astype(int)
+        invoice_no = valid_inv_nums.min() - 2 if not valid_inv_nums.empty else 115  # Initialize
 
         # Process both before and after data
         for data, output in [(df_before, output_file), (df_after, "2" + output_file)]:
             # Strip any leading/trailing whitespace from column values
             for col in columns_to_extract:
+                data = data.copy()
                 data[col] = data[col].astype(str).str.strip()
 
             # Remove rows where any of the required columns have NaN or empty values
             data = data.dropna(subset=columns_to_extract)
-            data = data[data["Customer"].notna() & (data["Customer"] != "")]
+            data = data[data["Customer"].notna() & (data["Customer"] != "")]  # Remove rows where Customer is NaN or empty
 
             # Save cleaned data to CSV before further processing
             data.to_csv(output, index=False)
@@ -48,23 +64,33 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
             # Select only the required columns
             filtered_df = data[columns_to_extract].copy()
 
-            # Initialize invoice_no from the first valid "Inv Num" if available
-            valid_inv_nums = pd.to_numeric(data["Inv Num"], errors="coerce").dropna().astype(int)
-            invoice_no = valid_inv_nums.min() - 2 if not valid_inv_nums.empty else 115  # Start at 115 if no valid Inv Num
+            # Remove rows with NaN values before assigning invoice number
+            filtered_df = filtered_df.dropna(subset=["Customer", "REG HRS", "B/R"])
 
-            current_customer = None
+            current_customer = ""
             new_rows = []
 
             # Iterate through each row
             for _, row in filtered_df.iterrows():
-                if pd.isna(row["Customer"]) or row["Customer"] == "":
+                customer_name = row["Customer"]
+
+                # Skip rows with "Separate Invoice" in customer name
+                if "Separate Invoice" in str(customer_name):
+                    print(f"Skipping customer with 'Separate Invoice': {customer_name}")
+                    continue  # Skip rows with "Separate Invoice"
+
+                print(f"Checking customer: {customer_name}")
+
+                if pd.isna(customer_name) or customer_name is None or not str(customer_name).strip():
+                    print("Skipping row with missing customer.")
                     continue  # Skip rows with no customer
 
+                print(f"Processing customer: {customer_name}")
+
                 # Check if customer has changed, and increment invoice number only if so
-                if row["Customer"] != current_customer:
+                if customer_name != current_customer:
                     current_customer = row["Customer"]
-                    # Only increment the invoice number if it's a new customer
-                    invoice_no += 1
+                    invoice_no += 1  # Increment invoice number only if it's a new customer
 
                 try:
                     inv_num = int(row["Inv Num"]) if pd.notnull(row["Inv Num"]) else None
