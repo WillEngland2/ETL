@@ -1,6 +1,6 @@
 import tkinter as tk
 from tkinter import messagebox, filedialog
-import subprocess
+from ETL_Main import process_excel, process_epic
 
 def on_button_click():
     input_file = entry_input_file.get()
@@ -11,19 +11,15 @@ def on_button_click():
     terms = entry_terms.get()
     item_tax_code = entry_item_tax_code.get()
 
-    # Check if all fields are filled
     if not all([input_file, output_file, co_code_output, invoice_date, due_date, terms]):
         messagebox.showwarning("Input Error", "Please fill in all required fields!")
         return
 
     try:
-        # Run the main script with the provided inputs
-        subprocess.run(
-            ["python", "ETL-Main.py", input_file, output_file, co_code_output, invoice_date, due_date, terms, item_tax_code],
-            check=True
-        )
+        process_excel(input_file, output_file, invoice_date, due_date, terms, item_tax_code)
+        process_epic(input_file, co_code_output)
         messagebox.showinfo("Success", "Process completed successfully!")
-    except subprocess.CalledProcessError as e:
+    except Exception as e:
         messagebox.showerror("Error", f"An error occurred: {e}")
 
 def browse_input_file():
@@ -32,16 +28,13 @@ def browse_input_file():
         entry_input_file.delete(0, tk.END)
         entry_input_file.insert(0, filename)
 
-# Create the main window
 root = tk.Tk()
 root.title("Excel Processing GUI")
 root.geometry("600x600")
 
-# Create a frame for the input file with the Browse button next to it
 frame_input_file = tk.Frame(root)
 frame_input_file.pack(pady=5)
 
-# Create widgets for file paths and other inputs
 label_input_file = tk.Label(frame_input_file, text="Input File:")
 label_input_file.pack(side=tk.LEFT,pady=5)
 
@@ -81,9 +74,7 @@ label_item_tax_code.pack(pady=5)
 entry_item_tax_code = tk.Entry(root)
 entry_item_tax_code.pack(pady=5)
 
-# Create a submit button
 button = tk.Button(root, text="Generate Files", command=on_button_click)
 button.pack(pady=20)
 
-# Run the application
 root.mainloop()

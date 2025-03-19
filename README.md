@@ -47,3 +47,5 @@
    - If pay correction is needed please add all needed information in the row so the parser knows who its for.
    - If a worker did not input hours in reg or ot, mark as zero. If not marked the parser will consider this an empty 
    row and throw it out.
+
+5. **Create exe:**
