@@ -48,4 +48,7 @@
    - If a worker did not input hours in reg or ot, mark as zero. If not marked the parser will consider this an empty 
    row and throw it out.
 
-5. **Create exe:**
+6. **Run EXE:**
+   - Download the exe that has been provided
+   - Run the program and input data
+   - all created files will be saved to desktop 
