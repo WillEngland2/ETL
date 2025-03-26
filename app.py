@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, jsonify
 from flask_cors import CORS
 
 app = Flask(__name__)
@@ -6,7 +6,7 @@ CORS(app)  # Allow cross-origin requests
 
 @app.route("/")
 def home():
-    return jsonify({"message": "API is running!"})
+    return jsonify({"message": "Hello, World!"})
 
 @app.route("/process", methods=["GET"])
 def process_data():
@@ -17,5 +17,4 @@ def process_data():
     result = value * 2  # Example computation
     return jsonify({"result": result})
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+# No need for app.run() as this is handled by the WSGI server
