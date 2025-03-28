@@ -1,116 +1,133 @@
 import os
-from flask import Flask, request, jsonify, send_from_directory
-from werkzeug.utils import secure_filename
 import logging
+import traceback
+from flask import Flask, render_template, send_from_directory, request, jsonify
+from werkzeug.utils import secure_filename
 from ETL_Main import process_excel, process_epic
+import pandas as pd
 
-# Initialize the Flask application
 app = Flask(__name__)
 
-# Configure file upload and processing directories
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+
+# Allowed file extensions and upload directory
+ALLOWED_EXTENSIONS = {'csv', 'xlsx', ''}
 UPLOAD_FOLDER = 'uploads'
-PROCESSED_FOLDER = 'processed'
-ALLOWED_EXTENSIONS = {'xls', 'xlsx', 'csv'}
-
-# Configure app settings
+PROCESSED_FILES_DIR = UPLOAD_FOLDER
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-app.config['PROCESSED_FOLDER'] = PROCESSED_FOLDER
 
-# Set up logging for debugging
-logging.basicConfig(level=logging.DEBUG)
+# Ensure the upload folder exists
+if not os.path.exists(UPLOAD_FOLDER):
+    os.makedirs(UPLOAD_FOLDER)
 
-# Check if the uploaded file has an allowed extension
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-# Route to handle file upload
-@app.route('/')
-def index():
-    return """
-        <html>
-        <body>
-            <h1>Welcome to ETL Converter</h1>
-            <form action="/upload" method="POST" enctype="multipart/form-data">
-                <input type="file" name="file" required>
-                <input type="text" name="output_name" placeholder="Output Name" required>
-                <input type="text" name="epic_name" placeholder="Epic Name">
-                <input type="text" name="invoice_date" placeholder="Invoice Date">
-                <input type="text" name="due_date" placeholder="Due Date">
-                <input type="text" name="terms" placeholder="Terms">
-                <input type="text" name="item_tax_code" placeholder="Item Tax Code">
-                <button type="submit">Upload</button>
-            </form>
-        </body>
-        </html>
-    """
-
-# Route to handle the upload and process the file
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
-        return jsonify({'error': 'No file part'}), 400
+        return jsonify({"error": "No file part"}), 400
+
     file = request.files['file']
-    
-    # Check if the file is valid
+
     if file.filename == '':
-        return jsonify({'error': 'No selected file'}), 400
-    
-    if not allowed_file(file.filename):
-        return jsonify({'error': 'Invalid file type'}), 400
+        return jsonify({"error": "No selected file"}), 400
 
-    # Get additional form data
-    output_name = request.form.get('output_name', 'Unknown Output')  # Changed to match input field name
-    epic_name = request.form.get('epic_name', 'Unknown Epic')
-    invoice_date = request.form.get('invoice_date', 'Unknown Date')
-    due_date = request.form.get('due_date', 'Unknown Due Date')
-    terms = request.form.get('terms', 'N/A')
-    item_tax_code = request.form.get('item_tax_code', 'N/A')
+    logging.info(f"Form keys received: {list(request.form.keys())}")
 
-    # Secure filename and save the file temporarily
-    filename = secure_filename(file.filename)
-    original_filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-    file.save(original_filepath)
+    if file and allowed_file(file.filename):
+        try:
+            filename = secure_filename(file.filename)
+            temp_filepath = os.path.join(UPLOAD_FOLDER, filename)
+            file.save(temp_filepath)
+            logging.info(f"File uploaded successfully: {temp_filepath}")
 
-    # Process the file and generate the processed file
-    processed_filename = process_data(original_filepath, filename, output_name, epic_name, invoice_date, due_date, terms, item_tax_code)
+            # Extract form inputs
+            try:
+                output_name = request.form['output_name']
+                epic_name = request.form['epic_name']
+                invoice_date = request.form['invoice_date']
+                due_date = request.form['due_date']
+                terms = request.form['terms']
+                item_tax_code = request.form['item_tax_code']
+            except Exception as form_error:
+                logging.error("Missing or invalid form field:")
+                logging.error(traceback.format_exc())
+                return jsonify({"error": "Missing or invalid form field"}), 400
 
-    if not processed_filename:
-        return jsonify({'error': 'Failed to process file'}), 500
+            # Process the file and generate outputs
+            processed_files = process_data(
+                temp_filepath, output_name, epic_name,
+                invoice_date, due_date, terms, item_tax_code
+            )
 
-    # Return the processed file for download
-    return send_from_directory(app.config['PROCESSED_FOLDER'], processed_filename, as_attachment=True)
+            if processed_files:
+                return jsonify({
+                    "message": "Files processed successfully",
+                    "files": [
+                        {"file_url": f"/processed-files/{processed_files['main_output']}", "name": "Main Output"},
+                        {"file_url": f"/processed-files/{processed_files['second_output']}", "name": "Second Output"},
+                        {"file_url": f"/processed-files/{processed_files['epic_output']}", "name": "Epic Output"}
+                    ]
+                }), 200
+            else:
+                return jsonify({"error": "File processing failed"}), 500
 
-# Function to process the file
-def process_data(filepath, filename, output_name, epic_name, invoice_date, due_date, terms, item_tax_code):
-    """
-    Process the uploaded file using the provided input data,
-    invoking the ETL_main.py functions.
-    """
-    # Use the provided output_name for the processed file
-    processed_filename = f"{output_name}.xlsx"  # Save the processed file with the desired name
-    processed_filepath = os.path.join(app.config['PROCESSED_FOLDER'], processed_filename)
+        except Exception as e:
+            logging.error("An error occurred during file upload:")
+            logging.error(traceback.format_exc())
+            return jsonify({"error": "Internal server error"}), 500
 
-    # Call the relevant ETL processing function
+    return jsonify({"error": "Invalid file format"}), 400
+
+def process_data(file_path, file_name, epic_name, invoice_date, due_date, terms, item_tax_code):
+    main_output_file = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_name}.csv")
+    second_output_file = os.path.join(app.config['UPLOAD_FOLDER'], f"2{file_name}.csv")
+    epic_output_file = os.path.join(app.config['UPLOAD_FOLDER'], f"{epic_name}_epic.csv")
+
+    output_files = {
+        "main_output": os.path.basename(main_output_file),
+        "second_output": os.path.basename(second_output_file),
+        "epic_output": os.path.basename(epic_output_file)
+    }
+
     try:
-        if "epic" in filename.lower():
-            # Process the epic file
-            process_epic(filepath, processed_filepath, epic_name, invoice_date, due_date, terms, item_tax_code)
-        else:
-            # Process the Excel file
-            process_excel(filepath, processed_filepath, invoice_date, due_date, terms, item_tax_code)
+        # Process main and second outputs via process_excel()
+        process_excel(file_path, main_output_file, invoice_date, due_date, terms, item_tax_code)
 
-        return processed_filename
+        # Ensure the second output file exists (create empty file if not generated)
+        if not os.path.exists(second_output_file):
+            open(second_output_file, 'w').close()
+
+        # Process the epic file via process_epic()
+        process_epic(file_path, epic_output_file)
+
+        logging.info("--- ETL Process Finished ---")
+        logging.info(f"Returning output files: {output_files}")
+        return output_files
+
     except Exception as e:
-        logging.error(f"Error in processing data: {e}")
+        logging.error("An error occurred during ETL processing:")
+        logging.error(traceback.format_exc())
         return None
 
-# Main entry point to run the app
-if __name__ == '__main__':
-    # Ensure upload and processed directories exist
-    if not os.path.exists(UPLOAD_FOLDER):
-        os.makedirs(UPLOAD_FOLDER)
-    if not os.path.exists(PROCESSED_FOLDER):
-        os.makedirs(PROCESSED_FOLDER)
+@app.route('/processed-files/<filename>')
+def download_file(filename):
+    try:
+        return send_from_directory(PROCESSED_FILES_DIR, filename)
+    except Exception as e:
+        logging.error("Error serving file:")
+        logging.error(traceback.format_exc())
+        return jsonify({"error": "File not found"}), 404
 
-    # Run the Flask app
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
+@app.route('/')
+def index():
+    return render_template('index.html')
+
+if __name__ == '__main__':
     app.run(debug=True)

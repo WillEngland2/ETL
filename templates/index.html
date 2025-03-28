@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ETL Project - File Upload</title>
+</head>
+<body>
+  <h1>Upload File</h1>
+  <form id="uploadForm" action="/upload" method="POST" enctype="multipart/form-data">
+    <label for="file">Choose File:</label>
+    <input type="file" name="file" required><br><br>
+    
+    <label for="output_name">Enter File Name:</label>
+    <input type="text" name="output_name" placeholder="Enter file name" required><br><br>
+    
+    <label for="epic_name">Enter Epic Name:</label>
+    <input type="text" name="epic_name" placeholder="Enter epic name" required><br><br>
+    
+    <label for="invoice_date">Invoice Date:</label>
+    <input type="text" name="invoice_date" placeholder="Enter invoice date" required><br><br>
+    
+    <label for="due_date">Due Date:</label>
+    <input type="text" name="due_date" placeholder="Enter due date" required><br><br>
+    
+    <label for="terms">Terms:</label>
+    <input type="text" name="terms" placeholder="Enter terms" required><br><br>
+    
+    <label for="item_tax_code">Item Tax Code:</label>
+    <input type="text" name="item_tax_code" placeholder="Enter item tax code" required><br><br>
+    
+    <button type="submit">Submit Data</button>
+  </form>
+
+  <!-- This div will display the download links for the files -->
+  <div id="downloadLinks" style="margin-top:20px;"></div>
+
+  <script>
+    document.getElementById('uploadForm').addEventListener('submit', async function(e) {
+      e.preventDefault(); // Prevent the default form submission
+      
+      const formData = new FormData(this);
+      
+      try {
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+        const result = await response.json();
+        console.log("Server response:", result);
+        
+        if (response.ok && result.files) {
+          const downloadDiv = document.getElementById('downloadLinks');
+          // Clear any previous links
+          downloadDiv.innerHTML = '';
+          
+          // Create a link for each output file
+          result.files.forEach(file => {
+            const a = document.createElement('a');
+            a.href = file.file_url;
+            a.textContent = file.name;
+            a.download = file.name + '.csv';  // Suggest a filename for download
+            a.style.display = 'block';
+            downloadDiv.appendChild(a);
+          });
+          alert("Files processed successfully. Check the download links below.");
+        } else {
+          alert("Error: " + (result.error || "Unknown error"));
+        }
+      } catch (error) {
+        console.error("Fetch error:", error);
+        alert("Error submitting form: " + error);
+      }
+    });
+  </script>
+</body>
+</html>

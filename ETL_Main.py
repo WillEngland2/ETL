@@ -1,4 +1,5 @@
 import pandas as pd
+import os
 
 def process_excel(input_file, output_file, invoice_date, due_date, terms, item_tax_code):
     if not (input_file.endswith(".xlsx") or input_file.endswith(".xls")):
@@ -33,7 +34,10 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
         valid_inv_nums = pd.to_numeric(df["Inv Num"], errors="coerce").dropna().astype(int)
         invoice_no = valid_inv_nums.min() - 2 if not valid_inv_nums.empty else 115
 
-        for data, output in [(df_before, output_file), (df_after, "2" + output_file)]:
+        second_output_file = os.path.join(os.path.dirname(output_file), "2" + os.path.basename(output_file))
+        
+        for data, output in [(df_before, output_file), (df_after, second_output_file)]:
+
             for col in columns_to_extract:
                 data = data.copy()
                 data[col] = data[col].astype(str).str.strip()
@@ -105,6 +109,7 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
                 print("No records found in the input file.")
                 return
 
+            output_file_path = os.path.join('/home/will-england/ETL',output_file)
             final_df.to_csv(output, index=False)
             print(f"Output saved to {output}")
 
