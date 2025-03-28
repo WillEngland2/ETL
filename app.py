@@ -11,9 +11,9 @@ app = Flask(__name__)
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Allowed file extensions and upload directory
-ALLOWED_EXTENSIONS = {'csv', 'xlsx', ''}
-UPLOAD_FOLDER = 'uploads'
+# Define absolute path for the uploads folder
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 PROCESSED_FILES_DIR = UPLOAD_FOLDER
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
@@ -22,7 +22,7 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in {'csv', 'xlsx', ''}
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -30,7 +30,6 @@ def upload_file():
         return jsonify({"error": "No file part"}), 400
 
     file = request.files['file']
-
     if file.filename == '':
         return jsonify({"error": "No selected file"}), 400
 
@@ -93,14 +92,12 @@ def process_data(file_path, file_name, epic_name, invoice_date, due_date, terms,
     }
 
     try:
-        # Process main and second outputs via process_excel()
         process_excel(file_path, main_output_file, invoice_date, due_date, terms, item_tax_code)
 
         # Ensure the second output file exists (create empty file if not generated)
         if not os.path.exists(second_output_file):
             open(second_output_file, 'w').close()
 
-        # Process the epic file via process_epic()
         process_epic(file_path, epic_output_file)
 
         logging.info("--- ETL Process Finished ---")
@@ -127,7 +124,7 @@ def uploaded_file(filename):
 
 @app.route('/')
 def index():
-    return render_template('index.html')
+    return render_template('index.html')  # Make sure your HTML file is named 'template.html'
 
 if __name__ == '__main__':
     app.run(debug=True)
