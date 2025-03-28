@@ -11,13 +11,13 @@ app = Flask(__name__)
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Define absolute path for the uploads folder
+# Use an absolute path for the uploads folder so it works on PythonAnywhere
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'uploads')
 PROCESSED_FILES_DIR = UPLOAD_FOLDER
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 
-# Ensure the upload folder exists
+# Ensure the uploads folder exists
 if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
@@ -55,7 +55,7 @@ def upload_file():
                 logging.error(traceback.format_exc())
                 return jsonify({"error": "Missing or invalid form field"}), 400
 
-            # Process the file and generate outputs
+            # Process the file and generate CSV outputs
             processed_files = process_data(
                 temp_filepath, output_name, epic_name,
                 invoice_date, due_date, terms, item_tax_code
@@ -81,6 +81,7 @@ def upload_file():
     return jsonify({"error": "Invalid file format"}), 400
 
 def process_data(file_path, file_name, epic_name, invoice_date, due_date, terms, item_tax_code):
+    # Construct output filenames with .csv extension
     main_output_file = os.path.join(app.config['UPLOAD_FOLDER'], f"{file_name}.csv")
     second_output_file = os.path.join(app.config['UPLOAD_FOLDER'], f"2{file_name}.csv")
     epic_output_file = os.path.join(app.config['UPLOAD_FOLDER'], f"{epic_name}_epic.csv")
@@ -92,12 +93,14 @@ def process_data(file_path, file_name, epic_name, invoice_date, due_date, terms,
     }
 
     try:
+        # Process the main data to CSV
         process_excel(file_path, main_output_file, invoice_date, due_date, terms, item_tax_code)
 
-        # Ensure the second output file exists (create empty file if not generated)
+        # Ensure the second output file exists (create an empty file if not generated)
         if not os.path.exists(second_output_file):
             open(second_output_file, 'w').close()
 
+        # Process the epic data to CSV
         process_epic(file_path, epic_output_file)
 
         logging.info("--- ETL Process Finished ---")
@@ -124,7 +127,7 @@ def uploaded_file(filename):
 
 @app.route('/')
 def index():
-    return render_template('index.html')  # Make sure your HTML file is named 'template.html'
+    return render_template('index.html')  # Ensure your HTML file is named 'template.html'
 
 if __name__ == '__main__':
     app.run(debug=True)
