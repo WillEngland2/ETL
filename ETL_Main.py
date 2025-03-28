@@ -1,7 +1,26 @@
 import pandas as pd
 import os
+from datetime import datetime, timedelta
 
-def process_excel(input_file, output_file, invoice_date, due_date, terms, item_tax_code):
+def process_excel(input_file, output_file, invoice_date):
+    # Try parsing the invoice date in yyyy-mm-dd format first (default from date picker)
+    try:
+        invoice_date_obj = datetime.strptime(invoice_date, '%Y-%m-%d')
+    except ValueError:
+        # If that fails, try parsing as "d m y" (or "dd mm yyyy" with possible leading zeros)
+        try:
+            invoice_date_obj = datetime.strptime(invoice_date, '%d %m %Y')
+        except ValueError:
+            print("Error: Invoice date must be in either yyyy-mm-dd or d m y format.")
+            return
+
+    # Compute due date as 30 days after invoice date
+    due_date_obj = invoice_date_obj + timedelta(days=30)
+    
+    # Format both dates as "d m y" (without leading zeros)
+    invoice_date_formatted = f"{invoice_date_obj.month} {invoice_date_obj.day} {invoice_date_obj.year}"
+    due_date_formatted = f"{due_date_obj.month} {due_date_obj.day} {due_date_obj.year}"
+
     if not (input_file.endswith(".xlsx") or input_file.endswith(".xls")):
         print("Error: The input file must be an Excel file (.xlsx or .xls).")
         return
@@ -73,10 +92,11 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
                     invoice_no = inv_num
 
                 row["*InvoiceNo"] = invoice_no
-                row["*ItemTaxCode"] = item_tax_code
-                row["*InvoiceDate"] = invoice_date
-                row["*DueDate"] = due_date
-                row["Terms"] = terms
+                row["*ItemTaxCode"] = " "
+                # Set dates using the provided invoice_date and computed due_date (both in "d m y" format)
+                row["*InvoiceDate"] = invoice_date_formatted
+                row["*DueDate"] = due_date_formatted
+                row["Terms"] = "Net 30"
 
                 row["*Customer"] = row.pop("Customer")
                 row["Rate"] = row.pop("B/R")
@@ -109,7 +129,6 @@ def process_excel(input_file, output_file, invoice_date, due_date, terms, item_t
                 print("No records found in the input file.")
                 return
 
-            output_file_path = os.path.join('/home/will-england/ETL',output_file)
             final_df.to_csv(output, index=False)
             print(f"Output saved to {output}")
 
