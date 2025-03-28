@@ -18,8 +18,8 @@ def process_excel(input_file, output_file, invoice_date):
     due_date_obj = invoice_date_obj + timedelta(days=30)
     
     # Format both dates as "d m y" (without leading zeros)
-    invoice_date_formatted = f"{invoice_date_obj.month} {invoice_date_obj.day} {invoice_date_obj.year}"
-    due_date_formatted = f"{due_date_obj.month} {due_date_obj.day} {due_date_obj.year}"
+    invoice_date_formatted = f"{invoice_date_obj.month}/{invoice_date_obj.day}/{invoice_date_obj.year}"
+    due_date_formatted = f"{due_date_obj.month}/{due_date_obj.day}/{due_date_obj.year}"
 
     if not (input_file.endswith(".xlsx") or input_file.endswith(".xls")):
         print("Error: The input file must be an Excel file (.xlsx or .xls).")
