@@ -87,14 +87,14 @@ def process_excel(input_file, output_file, invoice_date):
                 row["*InvoiceDate"] = invoice_date_formatted
                 row["*DueDate"] = due_date_formatted
                 row["Terms"] = "Net 30"
-                row["*Customer"] = row.pop("Customer")
-                row["Rate"] = pd.to_numeric(row.pop("B/R"), errors="coerce")
-                row["Hours"] = pd.to_numeric(row.pop("REG HRS"), errors="coerce")
+                row["*Customer"] = row.get("Customer")
+                row["Rate"] = pd.to_numeric(row.get("B/R"), errors="coerce")
+                row["Hours"] = pd.to_numeric(row.get("REG HRS"), errors="coerce")
                 row["OT HRS"] = pd.to_numeric(row.get("OT HRS", 0), errors="coerce")
                 row["OT B/R"] = pd.to_numeric(row.get("OT B/R", 0), errors="coerce")
 
                 if not is_second_invoice or "Department" not in row:
-                    row.pop("Department", None)
+                    row.get("Department", None)
 
                 row["Amount"] = round(row["Hours"] * row["Rate"], 2) if pd.notnull(row["Hours"]) and pd.notnull(row["Rate"]) else None
                 new_rows.append(row)
@@ -128,6 +128,13 @@ def process_excel(input_file, output_file, invoice_date):
             if final_df.empty:
                 print(f"No records found for {'second' if is_second_invoice else 'first'} invoice.")
                 continue
+
+            # After both invoices processed
+            if not os.path.exists(output_file):
+                print("ℹ️ Main output file was not created, creating empty placeholder.")
+                with open(output_file, 'w') as f:
+                    f.write("No valid records found.")
+
 
             final_df.to_csv(output, index=False)
             print(f"Output saved to {output}")
