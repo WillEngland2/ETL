@@ -3,21 +3,16 @@ import os
 from datetime import datetime, timedelta
 
 def process_excel(input_file, output_file, invoice_date):
-    # Try parsing the invoice date in yyyy-mm-dd format first (default from date picker)
     try:
         invoice_date_obj = datetime.strptime(invoice_date, '%Y-%m-%d')
     except ValueError:
-        # If that fails, try parsing as "d m y" (or "dd mm yyyy" with possible leading zeros)
         try:
             invoice_date_obj = datetime.strptime(invoice_date, '%d %m %Y')
         except ValueError:
             print("Error: Invoice date must be in either yyyy-mm-dd or d m y format.")
             return
 
-    # Compute due date as 30 days after invoice date
     due_date_obj = invoice_date_obj + timedelta(days=30)
-    
-    # Format both dates as "d m y" (without leading zeros)
     invoice_date_formatted = f"{invoice_date_obj.month}/{invoice_date_obj.day}/{invoice_date_obj.year}"
     due_date_formatted = f"{due_date_obj.month}/{due_date_obj.day}/{due_date_obj.year}"
 
@@ -27,6 +22,8 @@ def process_excel(input_file, output_file, invoice_date):
 
     try:
         df = pd.read_excel(input_file)
+
+        has_department = "Department" in df.columns
 
         separate_invoice_index = df.apply(
             lambda row: row.astype(str).str.contains("Separate Invoice", na=False, case=False)
@@ -42,70 +39,62 @@ def process_excel(input_file, output_file, invoice_date):
         df_before = df_before[~df_before['Customer'].str.contains("Separate Invoice", na=False, case=False)]
         df_after = df_after[~df_after['Customer'].str.contains("Separate Invoice", na=False, case=False)]
 
-        columns_to_extract = ["Customer", "Employee", "REG HRS", "B/R", "OT HRS", "OT B/R", "Inv Num"]
-
-        missing_columns_before = [col for col in columns_to_extract if col not in df_before.columns]
-        missing_columns_after = [col for col in columns_to_extract if col not in df_after.columns]
-        if missing_columns_before or missing_columns_after:
-            print(f"Error: Missing columns in data: {missing_columns_before + missing_columns_after}")
-            return
-
         valid_inv_nums = pd.to_numeric(df["Inv Num"], errors="coerce").dropna().astype(int)
         invoice_no = valid_inv_nums.min() - 2 if not valid_inv_nums.empty else 115
 
         second_output_file = os.path.join(os.path.dirname(output_file), "2" + os.path.basename(output_file))
-        
-        for data, output in [(df_before, output_file), (df_after, second_output_file)]:
 
+        for i, (data, output) in enumerate([(df_before, output_file), (df_after, second_output_file)]):
+            is_second_invoice = (i == 1)
+
+            columns_to_extract = ["Customer", "Employee", "REG HRS", "B/R", "OT HRS", "OT B/R", "Inv Num"]
+            if has_department:
+                columns_to_extract.append("Department")
+
+            data = data.copy()
             for col in columns_to_extract:
-                data = data.copy()
-                data[col] = data[col].astype(str).str.strip()
+                if col in data.columns:
+                    data[col] = data[col].astype(str).str.strip()
 
-            data = data.dropna(subset=columns_to_extract)
+            data = data.dropna(subset=["Customer", "Employee", "REG HRS", "B/R"])
             data = data[data["Customer"].notna() & (data["Customer"] != "")]
-            data.to_csv(output, index=False)
-
-            filtered_df = data[columns_to_extract].copy()
-            filtered_df = filtered_df.dropna(subset=["Customer", "REG HRS", "B/R"])
+            data = data[columns_to_extract].copy()
 
             current_customer = ""
             new_rows = []
 
-            for _, row in filtered_df.iterrows():
+            for _, row in data.iterrows():
                 customer_name = row["Customer"]
 
                 if "Separate Invoice" in str(customer_name):
                     continue
-                if pd.isna(customer_name) or customer_name is None or not str(customer_name).strip():
+                if pd.isna(customer_name) or not str(customer_name).strip():
                     continue
 
                 if customer_name != current_customer:
-                    current_customer = row["Customer"]
+                    current_customer = customer_name
                     invoice_no += 1
 
                 try:
                     inv_num = int(row["Inv Num"]) if pd.notnull(row["Inv Num"]) else None
+                    if inv_num is not None:
+                        invoice_no = inv_num
                 except ValueError:
-                    inv_num = None
-
-                if inv_num is not None:
-                    invoice_no = inv_num
+                    pass
 
                 row["*InvoiceNo"] = invoice_no
                 row["*ItemTaxCode"] = " "
-                # Set dates using the provided invoice_date and computed due_date (both in "d m y" format)
                 row["*InvoiceDate"] = invoice_date_formatted
                 row["*DueDate"] = due_date_formatted
                 row["Terms"] = "Net 30"
-
                 row["*Customer"] = row.pop("Customer")
-                row["Rate"] = row.pop("B/R")
-                row["Hours"] = row.pop("REG HRS")
-
-                row["Rate"] = pd.to_numeric(row["Rate"], errors="coerce")
-                row["Hours"] = pd.to_numeric(row["Hours"], errors="coerce")
+                row["Rate"] = pd.to_numeric(row.pop("B/R"), errors="coerce")
+                row["Hours"] = pd.to_numeric(row.pop("REG HRS"), errors="coerce")
                 row["OT HRS"] = pd.to_numeric(row.get("OT HRS", 0), errors="coerce")
                 row["OT B/R"] = pd.to_numeric(row.get("OT B/R", 0), errors="coerce")
+
+                if not is_second_invoice or "Department" not in row:
+                    row.pop("Department", None)
 
                 row["Amount"] = round(row["Hours"] * row["Rate"], 2) if pd.notnull(row["Hours"]) and pd.notnull(row["Rate"]) else None
                 new_rows.append(row)
@@ -119,15 +108,26 @@ def process_excel(input_file, output_file, invoice_date):
                     new_rows.append(overtime_row)
 
             final_df = pd.DataFrame(new_rows)
-            final_df.drop(columns=["OT HRS", "OT B/R"], inplace=True)
+            final_df.drop(columns=["OT HRS", "OT B/R"], inplace=True, errors='ignore')
 
-            column_order = ["*InvoiceNo", "*Customer", "*InvoiceDate", "*DueDate", "Terms", "Employee", "Hours", "Rate", "*ItemTaxCode", "Amount"]
+            # Drop rows with any missing important values
+            final_df = final_df.dropna(subset=["*Customer", "Employee", "Hours", "Rate", "Amount"])
+
+            # Build final column order
+            column_order = ["*InvoiceNo", "*Customer", "*InvoiceDate", "*DueDate", "Terms", "Employee"]
+            if is_second_invoice and has_department:
+                column_order.append("Department")
+            column_order += ["Hours", "Rate", "*ItemTaxCode", "Amount"]
+
+            for col in column_order:
+                if col not in final_df.columns:
+                    final_df[col] = ""
+
             final_df = final_df[column_order]
-            final_df.dropna(inplace=True)
 
             if final_df.empty:
-                print("No records found in the input file.")
-                return
+                print(f"No records found for {'second' if is_second_invoice else 'first'} invoice.")
+                continue
 
             final_df.to_csv(output, index=False)
             print(f"Output saved to {output}")
