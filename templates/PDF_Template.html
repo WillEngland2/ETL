@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>PDF Parser</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+</head>
+<body class="bg-light">
+  <div class="container d-flex flex-column justify-content-center align-items-center min-vh-100">
+    <div class="card w-100" style="max-width: 500px;">
+      <div class="card-body">
+        <h4 class="card-title text-center mb-4">Upload a Timecard PDF</h4>
+        <form id="pdfForm" enctype="multipart/form-data">
+          <div class="form-group">
+            <label for="file">Select PDF File</label>
+            <input type="file" class="form-control" id="file" name="file" accept=".pdf" required>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Upload & Process</button>
+        </form>
+        <div class="mt-4" id="message" style="display:none;"></div>
+        <div id="downloadLink" class="mt-2"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    document.getElementById('pdfForm').addEventListener('submit', async function (e) {
+      e.preventDefault();
+      const formData = new FormData();
+      const fileInput = document.getElementById('file');
+      formData.append('file', fileInput.files[0]);
+
+      const response = await fetch('/upload-pdf', {
+        method: 'POST',
+        body: formData
+      });
+
+      const result = await response.json();
+      const messageDiv = document.getElementById('message');
+      const downloadDiv = document.getElementById('downloadLink');
+
+      if (response.ok) {
+        messageDiv.innerHTML = `<div class="alert alert-success">${result.message}</div>`;
+        downloadDiv.innerHTML = `<a href="${result.download_link}" class="btn btn-success btn-block mt-2" download>Download Processed File</a>`;
+      } else {
+        messageDiv.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+      }
+
+      messageDiv.style.display = 'block';
+    });
+  </script>
+</body>
+</html>

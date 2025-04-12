@@ -1,25 +1,17 @@
-<!-- templates/index.html -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Login - ETL Project</title>
+  <title>Login - ETL & PDF Tools</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
 </head>
 <body class="bg-light">
-  <div class="container mt-5">
-    <div class="card mx-auto" style="max-width: 400px;">
-      <div class="card-header">
-        <h4>Select Product & Login</h4>
-      </div>
+  <div class="container d-flex flex-column justify-content-center align-items-center min-vh-100">
+    <div class="card w-100" style="max-width: 400px;">
       <div class="card-body">
-        <form method="POST" action="/login">
-          <div class="form-group">
-            <label for="product">Select Product</label>
-            <select name="product" class="form-control" required>
-              <option value="etl">ETL Tool</option>
-            </select>
-          </div>
+        <h4 class="card-title text-center mb-4">Login to Continue</h4>
+        <form action="/login" method="POST">
           <div class="form-group">
             <label for="username">Username</label>
             <input type="text" name="username" class="form-control" required>
@@ -28,7 +20,14 @@
             <label for="password">Password</label>
             <input type="password" name="password" class="form-control" required>
           </div>
-          <button type="submit" class="btn btn-primary btn-block">Continue</button>
+          <div class="form-group">
+            <label for="product">Select Tool</label>
+            <select name="product" class="form-control" required>
+              <option value="etl">ETL Tool</option>
+              <option value="pdf_parser">PDF Parser</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Login</button>
         </form>
       </div>
     </div>
