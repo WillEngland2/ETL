@@ -2,7 +2,7 @@
 
 This web application allows users to upload Excel or PDF timecard files and transform them into structured CSVs ready for invoicing and QuickBooks import. It's built for ease of use—no command line required.
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 - **Backend:** Python, Flask, pandas, pdfplumber  
 - **Frontend:** HTML, Bootstrap  
