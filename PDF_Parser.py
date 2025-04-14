@@ -38,8 +38,6 @@ def parse_timecard_pdf(pdf_path, output_excel_path):
                 raw_employee_line = header_info.get("Employee", "").strip()
 
             words = raw_employee_line.split()
-            print(words)
-
             employee_name = " ".join(words[:-5])
             customer_name = " ".join(words[-5:])
 
@@ -109,6 +107,8 @@ def parse_timecard_pdf(pdf_path, output_excel_path):
     # Group entries across all pages
     final_df = pd.DataFrame(all_final_rows)
     final_df = final_df.groupby(["Customer", "Employee"], as_index=False).sum()
+
+    final_df = final_df.sort_values(by= "Employee")
 
     # Compute total only once
     pay_period_total = final_df["TOTAL HRS"].sum()
