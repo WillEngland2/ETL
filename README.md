@@ -29,3 +29,13 @@ This web application allows users to upload Excel or PDF timecard files and tran
 - **Second Output:** Separate invoices if needed  
 - **Epic Output:** Epic-specific employee hour summaries
 - **PDF Output:** Formatted employee infomation
+
+## Technologies Used
+
+- **Python** – Core language for scripting and data processing
+- **Flask** – Web framework used for building the web interface and API
+- **pandas** – Data manipulation and analysis library
+- **pdfplumber** – PDF text extraction for parsing timecard PDFs
+- **xlsxwriter / openpyxl** – Excel file handling and output
+- **HTML / Bootstrap** – Frontend form for file uploads and user interaction
+- **Logging** – Built-in Python logging for tracking errors and activity
