@@ -1,3 +1,4 @@
+# Author: Will England
 import pdfplumber
 import re
 import pandas as pd
