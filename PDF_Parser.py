@@ -38,51 +38,27 @@ def parse_timecard_pdf(pdf_path, output_excel_path):
                 raw_employee_line = header_info.get("Employee", "").strip()
 
             words = raw_employee_line.split()
-            employee_name = " ".join(words[:-5])
-            customer_name = " ".join(words[-5:])
+            employee_name = " ".join(words[:-5]) if len(words) >= 6 else raw_employee_line
+            customer_name = " ".join(words[-5:]) if len(words) >= 6 else ""
 
-            # Extract daily entries
-            daily_entries = []
-            daily_matches = re.findall(
-                r"(Thursday|Friday|Saturday)\s+(\d{1,2}/\d{1,2}/\d{4})(.*?)\n\s*(\d+\.\d+)\s+0\.00\s+(\d+\.\d+)",
-                text,
-                re.DOTALL
-            )
+            # Find all occurrences in the entire document
+            reg_matches = re.findall(r"Temp\s+Hours\s+Memo\s+(\d+\.\d+)", text)
+            ot_matches = re.findall(r"Temp\s+OT\s+Memo\s+(\d+\.\d+)", text)
 
-            for match in daily_matches:
-                day, date, block, daily_total, paid_total = match
-                time_blocks = re.findall(
-                    r"(\d{2}:\d{2}\s[AP]M|\(\d{2}:\d{2}\s[AP]M\))\s*(\d{2}:\d{2}\s[AP]M|\(\d{2}:\d{2}\s[AP]M\))\s+100\s+(.*?)\s+(\d+\.\d+)\s+(\d+\.\d+)",
-                    block
-                )
-                for tb in time_blocks:
-                    start, end, earning_type, hours, paid = tb
-                    daily_entries.append({
-                        "Earning Type": earning_type.strip(),
-                        "Hours": hours
-                    })
+            # Take only the LAST occurrence (assumed to be the final summary total)
+            reg = float(reg_matches[-1]) if reg_matches else 0.0
+            ot = float(ot_matches[-1]) if ot_matches else 0.0
 
-            # Add Total Hours if present
-            total_hours_match = re.search(r"Total Hours\s+(\d+\.\d+)", text)
-            if total_hours_match:
-                total_hours = float(total_hours_match.group(1))
-                daily_entries.append({
-                    "Earning Type": "Total Hours",
-                    "Hours": total_hours
-                })
+            print(f"REG HRS: {reg}, OT HRS: {ot}")
 
-            # Only use Total Hours if present, else sum block entries
-            total_entry = next((e for e in daily_entries if e["Earning Type"].lower() == "total hours"), None)
+            print(f"\n--- Page Debug ---")
+            print(f"Employee: {employee_name}")
+            print(f"Customer: {customer_name}")
+            print(f"REG HRS: {reg}, OT HRS: {ot}")
 
-            if total_entry:
-                total_hours = float(total_entry["Hours"])
-                if total_hours > 40:
-                    reg = 40.0
-                    ot = total_hours - 40.0
-                else:
-                    reg = total_hours
-                    ot = 0.0
 
+            # Add to final rows only if valid hours exist
+            if reg > 0 or ot > 0:
                 all_final_rows.append({
                     "Customer": customer_name,
                     "Employee": employee_name,
@@ -90,38 +66,33 @@ def parse_timecard_pdf(pdf_path, output_excel_path):
                     "OT HRS": ot,
                     "TOTAL HRS": reg + ot
                 })
-            else:
-                for entry in daily_entries:
-                    earning_type = entry["Earning Type"].lower()
-                    if "hours" not in earning_type:
-                        continue
-                    reg_hours = float(entry["Hours"])
-                    all_final_rows.append({
-                        "Customer": customer_name,
-                        "Employee": employee_name,
-                        "REG HRS": reg_hours,
-                        "OT HRS": 0.0,
-                        "TOTAL HRS": reg_hours
-                    })
 
-    # Group entries across all pages
+    # Build final DataFrame
     final_df = pd.DataFrame(all_final_rows)
+
+    if final_df.empty:
+        # Create an empty Excel file if nothing valid was extracted
+        with pd.ExcelWriter(output_excel_path, engine='xlsxwriter') as writer:
+            pd.DataFrame(columns=["Customer", "Employee", "REG HRS", "OT HRS", "TOTAL HRS"]).to_excel(
+                writer, index=False, sheet_name="Payroll Ready"
+            )
+        print("⚠️ No valid REG or OT hours found. Empty Excel file created.")
+        return
+
+    # Group and sort the extracted rows
     final_df = final_df.groupby(["Customer", "Employee"], as_index=False).sum()
+    final_df = final_df.sort_values(by="Employee")
 
-    final_df = final_df.sort_values(by= "Employee")
-
-    # Compute total only once
+    # Compute total hours for pay period
     pay_period_total = final_df["TOTAL HRS"].sum()
 
-    # ✅ Write everything to Excel
+    # Write to Excel
     with pd.ExcelWriter(output_excel_path, engine='xlsxwriter') as writer:
         final_df.to_excel(writer, index=False, sheet_name="Payroll Ready")
-
-        # Add TOTAL PAY PERIOD HOURS row below table
         workbook = writer.book
         worksheet = writer.sheets["Payroll Ready"]
         row = len(final_df) + 2
         worksheet.write(row, 0, "TOTAL PAY PERIOD HOURS")
         worksheet.write(row, 1, pay_period_total)
 
-    print(f"Excel file created: {output_excel_path}")
+    print(f"✅ Excel file created: {output_excel_path}")
