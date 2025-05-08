@@ -43,20 +43,12 @@ def parse_timecard_pdf(pdf_path, output_excel_path):
             customer_name = " ".join(words[-5:]) if len(words) >= 6 else ""
 
             # Find all occurrences in the entire document
-            reg_matches = re.findall(r"Temp\s+Hours\s+Memo\s+(\d+\.\d+)", text)
-            ot_matches = re.findall(r"Temp\s+OT\s+Memo\s+(\d+\.\d+)", text)
+            reg_matches = re.findall(r"Temp\s+Hours\s+Memo\s+(\d+\.\d+)", text) or re.findall(r"Hourly\s+(\d+\.\d+)", text)
+            ot_matches = re.findall(r"Temp\s+OT\s+Memo\s+(\d+\.\d+)", text) or re.findall(r"Overtime\s+(\d+\.\d+)", text)
 
             # Take only the LAST occurrence (assumed to be the final summary total)
             reg = float(reg_matches[-1]) if reg_matches else 0.0
             ot = float(ot_matches[-1]) if ot_matches else 0.0
-
-            print(f"REG HRS: {reg}, OT HRS: {ot}")
-
-            print(f"\n--- Page Debug ---")
-            print(f"Employee: {employee_name}")
-            print(f"Customer: {customer_name}")
-            print(f"REG HRS: {reg}, OT HRS: {ot}")
-
 
             # Add to final rows only if valid hours exist
             if reg > 0 or ot > 0:
@@ -81,8 +73,8 @@ def parse_timecard_pdf(pdf_path, output_excel_path):
         return
 
     # Group and sort the extracted rows
-    final_df = final_df.groupby(["Customer", "Employee"], as_index=False).sum()
-    final_df = final_df.sort_values(by="Employee")
+    # final_df = final_df.groupby(["Customer", "Employee"], as_index=False).sum()
+    # final_df = final_df.sort_values(by="Employee")
 
     # Compute total hours for pay period
     pay_period_total = final_df["TOTAL HRS"].sum()
